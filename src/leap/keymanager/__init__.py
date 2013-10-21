@@ -30,13 +30,13 @@ try:
 except (ImportError, AssertionError):
     print "*******"
     print "Ooops! It looks like there is a conflict in the installed version "
-    print "of gnupg."
+    print "of the python gnupg package."
     print
     print "Disclaimer: Ideally, we would need to work a patch and propose the "
     print "merge to upstream. But until then do: "
     print
-    print "% pip uninstall python-gnupg"
-    print "% pip install gnupg"
+    print "% pip uninstall gnupg"
+    print "% pip install python-gnupg"
     print "*******"
     sys.exit(1)
 
