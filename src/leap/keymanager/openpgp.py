@@ -337,6 +337,8 @@ class OpenPGPScheme(EncryptionScheme):
             leap_assert(match is not None, 'No user address in key data.')
             address = match.group(1)
 
+            openpgp_privkey = None
+
             if privkey is not None:
                 match = re.match(mail_regex, privkey['uids'].pop())
                 leap_assert(match is not None, 'No user address in key data.')
