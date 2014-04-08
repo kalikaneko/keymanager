@@ -6,7 +6,7 @@
   o Memoize call to get_key. Closes #4784.
   o Update auth to interact with webapp v2. Fixes #5120.
 
--- 2014 --
+-- 2013 --
 
 0.3.7 Dec 6:
   o Fix error return values on openpgp backend.
