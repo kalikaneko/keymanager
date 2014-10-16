@@ -14,8 +14,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
-
-
 """
 Abstact key type and encryption scheme representations.
 """
@@ -221,21 +219,28 @@ class EncryptionScheme(object):
         """
         leap_assert(self._soledad is not None,
                     "Cannot init indexes with null soledad")
+
+        def check_indexes(indexes):
+            db_indexes = dict(indexes)
+            # Loop through the indexes we expect to find.
+            for name, expression in INDEXES.items():
+                if name not in db_indexes:
+                    # The index does not yet exist.
+                    self._soledad.create_index(name, *expression)
+                    continue
+                if expression == db_indexes[name]:
+                    # The index exists and is up to date.
+                    continue
+
+                # The index exists but the definition is not what expected, so
+                # we delete it and add the proper index expression.
+                d1 = self._soledad.delete_index(name)
+                d1.addCallback(lambda v:
+                               self._soledad.create_index(name, *expression))
+
         # Ask the database for currently existing indexes.
-        db_indexes = dict(self._soledad.list_indexes())
-        # Loop through the indexes we expect to find.
-        for name, expression in INDEXES.items():
-            if name not in db_indexes:
-                # The index does not yet exist.
-                self._soledad.create_index(name, *expression)
-                continue
-            if expression == db_indexes[name]:
-                # The index exists and is up to date.
-                continue
-            # The index exists but the definition is not what expected, so we
-            # delete it and add the proper index expression.
-            self._soledad.delete_index(name)
-            self._soledad.create_index(name, *expression)
+        d = self._soledad.list_indexes()
+        d.addCallback(check_indexes)
 
     @abstractmethod
     def get_key(self, address, private=False):

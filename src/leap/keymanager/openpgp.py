@@ -279,26 +279,33 @@ class OpenPGPScheme(EncryptionScheme):
 
     def get_key(self, address, private=False):
         """
-        Get key bound to C{address} from local storage.
+        Get key bound to ``address`` from local storage.
 
         :param address: The address bound to the key.
         :type address: str
         :param private: Look for a private key instead of a public one?
         :type private: bool
 
-        :return: The key bound to C{address}.
-        :rtype: OpenPGPKey
-        @raise KeyNotFound: If the key was not found on local storage.
+        :return:
+            A Deferred that eventually will fire with the OpenPGPKey bound
+            to ``address``
+        :rtype: Deferred
+
+        :raise KeyNotFound: If the key was not found on local storage.
         """
         # Remove the identity suffix after the '+' until the '@'
         # e.g.: test_user+something@provider.com becomes test_user@provider.com
         # since the key belongs to the identity without the '+' suffix.
         address = re.sub(r'\+.*\@', '@', address)
 
-        doc = self._get_key_doc(address, private)
-        if doc is None:
-            raise errors.KeyNotFound(address)
-        return build_key_from_dict(OpenPGPKey, address, doc.content)
+        def get_key_from_doc(doc):
+            if doc is None:
+                raise errors.KeyNotFound(address)
+            return build_key_from_dict(OpenPGPKey, address, doc.content)
+
+        d = self._get_key_doc(address, private)
+        d.addCallback(get_key_from_doc)
+        return d
 
     def parse_ascii_key(self, key_data):
         """
@@ -389,42 +396,52 @@ class OpenPGPScheme(EncryptionScheme):
         :param key: The key to be stored.
         :type key: OpenPGPKey
         """
-        doc = self._get_key_doc(key.address, private=key.private)
-        if doc is None:
-            self._soledad.create_doc_from_json(key.get_json())
-        else:
-            doc.set_json(key.get_json())
-            self._soledad.put_doc(doc)
+        def create_or_put_doc(doc):
+            if doc is None:
+                return self._soledad.create_doc_from_json(key.get_json())
+            else:
+                doc.set_json(key.get_json())
+                return self._soledad.put_doc(doc)
+
+        d = self._get_key_doc(key.address, private=key.private)
+        d.addCallback(create_or_put_doc)
 
     def _get_key_doc(self, address, private=False):
         """
-        Get the document with a key (public, by default) bound to C{address}.
+        Get the document with a key (public, by default) bound to ``address``.
 
-        If C{private} is True, looks for a private key instead of a public.
+        If ``private`` is True, it looks for a private key instead of a public.
 
         :param address: The address bound to the key.
         :type address: str
         :param private: Whether to look for a private key.
         :type private: bool
-        :return: The document with the key or None if it does not exist.
-        :rtype: leap.soledad.document.SoledadDocument
+
+        :return:
+            A deferred that enventually will fire with the SoledadDocument
+            containing the key, or None if it does not exist.
+        :rtype: Deferred
         """
-        doclist = self._soledad.get_from_index(
+        def get_key(doclist):
+            if len(doclist) is 0:
+                return None
+            leap_assert(
+                len(doclist) is 1,
+                'Found more than one %s key for address!' %
+                'private' if private else 'public')
+            return doclist.pop()
+
+        d = self._soledad.get_from_index(
             TAGS_ADDRESS_PRIVATE_INDEX,
             KEYMANAGER_KEY_TAG,
             address,
             '1' if private else '0')
-        if len(doclist) is 0:
-            return None
-        leap_assert(
-            len(doclist) is 1,
-            'Found more than one %s key for address!' %
-            'private' if private else 'public')
-        return doclist.pop()
+        d.addCallback(get_key)
+        return d
 
     def delete_key(self, key):
         """
-        Remove C{key} from storage.
+        Remove ``key`` from storage.
 
         May raise:
             errors.KeyNotFound
@@ -439,8 +456,12 @@ class OpenPGPScheme(EncryptionScheme):
             raise errors.KeyNotFound(key)
         if stored_key.__dict__ != key.__dict__:
             raise errors.KeyAttributesDiffer(key)
-        doc = self._get_key_doc(key.address, key.private)
-        self._soledad.delete_doc(doc)
+
+        def delete_doc(doc):
+            self._soledad.delete_doc(doc)
+
+        d = self._get_key_doc(key.address, key.private)
+        d.addCallback(delete_doc)
 
     #
     # Data encryption, decryption, signing and verifying
@@ -449,12 +470,12 @@ class OpenPGPScheme(EncryptionScheme):
     def _temporary_gpgwrapper(self, keys=None):
         """
         Return a gpg wrapper that implements the context manager protocol and
-        contains C{keys}.
+        contains ``keys``.
 
         :param key_data: ASCII armored key data.
         :type key_data: str
         :param gpgbinary: Name for GnuPG binary executable.
-        :type gpgbinary: C{str}
+        :type gpgbinary: ``str``
 
         :return: a TempGPGWrapper instance
         :rtype: TempGPGWrapper
