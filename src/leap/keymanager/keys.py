@@ -192,14 +192,22 @@ class EncryptionKey(object):
 
     __metaclass__ = ABCMeta
 
-    def __init__(self, address=None, uids=[], fingerprint="",
+    __slots__ = ('address', 'uids', 'fingerprint', 'key_data',
+                 'private', 'length', 'expiry_date', 'validation',
+                 'last_audited_at', 'refreshed_at',
+                 'encr_used', 'sign_used', '_index')
+
+    def __init__(self, address=None, uids=None, fingerprint="",
                  key_data="", private=False, length=0, expiry_date=None,
                  validation=ValidationLevels.Weak_Chain, last_audited_at=None,
                  refreshed_at=None, encr_used=False, sign_used=False):
+	self._index = len(self.__slots__)
+
         self.address = address
-        if not uids and address:
+        if uids is not None and address:
             self.uids = [address]
         else:
+            # TODO assert it's an iterator but not a string
             self.uids = uids
         self.fingerprint = fingerprint
         self.key_data = key_data
@@ -213,64 +221,47 @@ class EncryptionKey(object):
         self.encr_used = encr_used
         self.sign_used = sign_used
 
-    def get_json(self):
+    def to_json(self, active=False):
         """
         Return a JSON string describing this key.
 
         :return: The JSON string describing this key.
         :rtype: str
         """
-        expiry_date = _to_unix_time(self.expiry_date)
         refreshed_at = _to_unix_time(self.refreshed_at)
+        expiry_date = _to_unix_time(self.expiry_date)
 
-        return json.dumps({
-            KEY_UIDS_KEY: self.uids,
-            KEY_TYPE_KEY: self.__class__.__name__,
-            KEY_FINGERPRINT_KEY: self.fingerprint,
-            KEY_DATA_KEY: self.key_data,
-            KEY_PRIVATE_KEY: self.private,
-            KEY_LENGTH_KEY: self.length,
-            KEY_EXPIRY_DATE_KEY: expiry_date,
-            KEY_REFRESHED_AT_KEY: refreshed_at,
-            KEY_VERSION_KEY: KEYMANAGER_DOC_VERSION,
-            KEY_TAGS_KEY: [KEYMANAGER_KEY_TAG],
-        })
+        _d = dict(self)
+        _d['validation'] = self.validation.value
+        name = self.__class__.__name__
+        if active:
+            name += KEYMANAGER_ACTIVE_TYPE
+            tags = [KEYMANAGER_ACTIVE_TAG]
+        else:
+            tags = [KEYMANAGER_KEY_TAG]
+            _d[KEY_REFRESHED_AT_KEY] = refreshed_at
+            _d[KEY_EXPIRY_DATE_KEY] = expiry_date
+            _d[KEY_LENGTH_KEY] = self.length
 
-    def get_active_json(self):
-        """
-        Return a JSON string describing this key.
+        _d[KEY_TYPE_KEY] = name
+        _d[KEY_TAGS_KEY] = tags
+        _d[KEY_VERSION_KEY] = KEYMANAGER_DOC_VERSION
+        return json.dumps(_d)
 
-        :return: The JSON string describing this key.
-        :rtype: str
-        """
-        last_audited_at = _to_unix_time(self.last_audited_at)
 
-        return json.dumps({
-            KEY_ADDRESS_KEY: self.address,
-            KEY_TYPE_KEY: self.__class__.__name__ + KEYMANAGER_ACTIVE_TYPE,
-            KEY_FINGERPRINT_KEY: self.fingerprint,
-            KEY_PRIVATE_KEY: self.private,
-            KEY_VALIDATION_KEY: str(self.validation),
-            KEY_LAST_AUDITED_AT_KEY: last_audited_at,
-            KEY_ENCR_USED_KEY: self.encr_used,
-            KEY_SIGN_USED_KEY: self.sign_used,
-            KEY_VERSION_KEY: KEYMANAGER_DOC_VERSION,
-            KEY_TAGS_KEY: [KEYMANAGER_ACTIVE_TAG],
-        })
+    def next(self):
+        if self._index == 0:
+	    self._index = len(self.__slots__)
+            raise StopIteration
+        self._index = self._index - 1
+	key = self.__slots__[self._index]
+	if key.startswith('_'):
+            self._index = self._index - 1
+	    key = self.__slots__[self._index]
+        return key, getattr(self, key)
 
-    def get_dict(self):
-        """
-        :return: a serializable dict representation of this key.
-        :rtype: dict
-        """
-        return {
-          KEY_ADDRESS_KEY: self.address,
-          KEY_UIDS_KEY: self.uids,
-          KEY_FINGERPRINT_KEY: self.fingerprint,
-          KEY_LENGTH_KEY: self.length,
-          KEY_EXPIRY_DATE_KEY: str(self.expiry_date),
-          KEY_DATA_KEY: self.key_data
-        }
+    def __iter__(self):
+        return self
 
     def __repr__(self):
         """
